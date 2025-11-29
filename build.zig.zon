@@ -9,8 +9,8 @@
             .hash = "N-V-__8AALvVTACiGNxqSQlRY-WVJjzZ_WYE1kvF8PVYl5aF",
         },
         .mbedtls = .{
-            .url = "https://github.com/thomashn/mbedtls/archive/refs/heads/zig-0.15.1.zip",
-            .hash = "mbedtls-3.6.2-E4NUR3cUAAB3meZe5pEWr27YQKWCa91g0oUtDDVfuNvY",
+            .url = "git+https://github.com/allyourcodebase/mbedtls#68d5872dca0faa3e2a09d3329c73bd8779cc34e6",
+            .hash = "mbedtls-3.6.4-E4NUR24VAADBF5pt-No-Z90DjozkzySYAgq6eDFy9Xdy",
         },
         .zlib = .{
             .url = "git+https://github.com/allyourcodebase/zlib.git#61e7df7e996ec5a5f13a653db3c419adb340d6ef",
