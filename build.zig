@@ -1,11 +1,11 @@
 const std = @import("std");
 
 const major = 0;
-const minor = 11;
-const patch = 2;
+const minor = 12;
+const patch = 0;
 const version = std.fmt.comptimePrint("{}.{}.{}", .{ major, minor, patch });
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -80,16 +80,20 @@ pub fn build(b: *std.Build) void {
         enable_exec = !is_windows;
     }
 
+    const config_paths = try makeConfigPaths(b.allocator, is_windows, with_hermetic_usr);
+
     const config = .{
         .PROJECT_NAME = "libssh",
         .PROJECT_VERSION = version,
         .SYSCONFDIR = "TODO",
         .BINARYDIR = "TODO",
         .SOURCEDIR = "TODO",
-        .USR_GLOBAL_BIND_CONFIG = "TODO",
-        .GLOBAL_BIND_CONFIG = "/etc/ssh/libssh_server_config",
-        .USR_GLOBAL_CLIENT_CONFIG = "TODO",
-        .GLOBAL_CLIENT_CONFIG = "/etc/ssh/ssh_config",
+        .USR_GLOBAL_CONF_DIR = config_paths.usr_conf_dir,
+        .GLOBAL_CONF_DIR = config_paths.conf_dir,
+        .USR_GLOBAL_BIND_CONFIG = config_paths.usr_bind_config,
+        .GLOBAL_BIND_CONFIG = config_paths.bind_config,
+        .USR_GLOBAL_CLIENT_CONFIG = config_paths.usr_client_config,
+        .GLOBAL_CLIENT_CONFIG = config_paths.client_config,
         .HAVE_ARGP_H = have_argp,
         .HAVE_ARPA_INET_H = is_unix,
         .HAVE_GLOB_H = is_unix,
@@ -111,6 +115,8 @@ pub fn build(b: *std.Build) void {
         .HAVE_OPENSSL_ECDH_H = with_openssl,
         .HAVE_OPENSSL_EC_H = with_openssl,
         .HAVE_OPENSSL_ECDSA_H = with_openssl,
+        .HAVE_OPENSSL_MLKEM = with_openssl and false,
+        .HAVE_MLKEM1024 = with_openssl and false, // TODO: somehow check for openssl version
         .HAVE_PTHREAD_H = 1,
         .HAVE_OPENSSL_ECC = with_openssl,
         .HAVE_GCRYPT_ECC = with_gcrypt,
@@ -188,7 +194,7 @@ pub fn build(b: *std.Build) void {
     }, config);
 
     const libssh = b.addLibrary(.{
-        .name = "libssh",
+        .name = "ssh",
         .version = .{
             .major = major,
             .minor = minor,
@@ -267,11 +273,13 @@ pub fn build(b: *std.Build) void {
             "connector.c",
             "crypto_common.c",
             "curve25519.c",
+            "sntrup761.c",
             "dh.c",
             "ecdh.c",
             "error.c",
             "getpass.c",
             "gzip.c",
+            "hybrid_mlkem.c",
             "init.c",
             "kdf.c",
             "kex.c",
@@ -282,12 +290,14 @@ pub fn build(b: *std.Build) void {
             "match.c",
             "messages.c",
             "misc.c",
+            "mlkem.c",
             "options.c",
             "packet.c",
             "packet_cb.c",
             "packet_crypt.c",
             "pcap.c",
             "pki.c",
+            "pki_context.c",
             "pki_container_openssh.c",
             "poll.c",
             "session.c",
@@ -328,6 +338,16 @@ pub fn build(b: *std.Build) void {
             .root = libssh_src,
             .files = &.{
                 "threads/noop.c",
+            },
+        });
+    }
+
+    if (!config.HAVE_MLKEM1024) {
+        libssh.addCSourceFiles(.{
+            .root = libssh_src,
+            .files = &.{
+                "mlkem_native.c",
+                "external/libcrux_mlkem768_sha3.c",
             },
         });
     }
@@ -378,6 +398,7 @@ pub fn build(b: *std.Build) void {
                 "external/fe25519.c",
                 "external/ge25519.c",
                 "external/sc25519.c",
+                "external/sntrup761.c",
             },
         });
         // TODO FIX MISSING HAVE_MBEDTLS_CHACHA20_H, HAVE_MBEDTLS_POLY1305_H
@@ -396,10 +417,12 @@ pub fn build(b: *std.Build) void {
                 "threads/libcrypto.c",
                 "pki_crypto.c",
                 "ecdh_crypto.c",
+                "curve25519_crypto.c",
                 "getrandom_crypto.c",
                 "md_crypto.c",
                 "libcrypto.c",
                 "dh_crypto.c",
+                "external/sntrup761.c",
             },
         });
         if (!config.HAVE_OPENSSL_EVP_CHACHA20) {
@@ -458,6 +481,7 @@ pub fn build(b: *std.Build) void {
             .root = libssh_src,
             .files = &.{
                 "gssapi.c",
+                "kex-gss.c",
             },
         });
     }
@@ -466,6 +490,7 @@ pub fn build(b: *std.Build) void {
         libssh.addCSourceFiles(.{
             .root = libssh_src,
             .files = &.{
+                "curve25519_fallback.c",
                 "external/curve25519_ref.c",
             },
         });
@@ -568,4 +593,49 @@ pub fn build(b: *std.Build) void {
             examples.add("libsshpp_noexcept");
         }
     }
+}
+
+const ConfigPaths = struct {
+    conf_dir: []const u8,
+    bind_config: []u8,
+    client_config: []u8,
+    usr_conf_dir: ?[]u8 = null,
+    usr_bind_config: ?[]u8 = null,
+    usr_client_config: ?[]u8 = null,
+};
+
+fn makeConfigPaths(allocator: std.mem.Allocator, is_windows: bool, with_hermetic_usr: bool) !ConfigPaths {
+    const conf_dir = blk: {
+        if (is_windows) {
+            break :blk "C:/ProgramData/ssh";
+        } else {
+            break :blk "/etc/ssh";
+        }
+    };
+
+    var p: ConfigPaths = .{
+        .conf_dir = conf_dir,
+        .bind_config = try std.fmt.allocPrint(allocator, "{s}/libssh_server_config", .{conf_dir}),
+        .client_config = try std.fmt.allocPrint(allocator, "{s}/ssh_config", .{conf_dir}),
+    };
+
+    if (with_hermetic_usr) {
+        p.usr_conf_dir = try std.fmt.allocPrint(
+            allocator,
+            "/usr{s}",
+            .{conf_dir},
+        );
+        p.usr_bind_config = try std.fmt.allocPrint(
+            allocator,
+            "/usr{s}",
+            .{p.bind_config},
+        );
+        p.usr_client_config = try std.fmt.allocPrint(
+            allocator,
+            "/usr{s}",
+            .{p.client_config},
+        );
+    }
+
+    return p;
 }

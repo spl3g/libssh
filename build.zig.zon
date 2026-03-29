@@ -1,12 +1,12 @@
 .{
     .name = .libssh,
-    .version = "0.11.2",
+    .version = "0.12.0",
     .fingerprint = 0xda355160da7dff73,
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .libssh = .{
-            .url = "git+https://gitlab.com/libssh/libssh-mirror.git?ref=libssh-0.11.3#301d0e16dfa8a5cac1cff956b6880ca90eb82864",
-            .hash = "N-V-__8AAJ4jTQDM7VOkAl1kkGkbqhjOUPN_-RgeAcBYF9Np",
+            .url = "https://www.libssh.org/files/0.12/libssh-0.12.0.tar.xz",
+            .hash = "N-V-__8AAEB5XwCDhvQXq4bZyvrGgalZQOreKwK0l_4dVLxL",
         },
         .mbedtls = .{
             .url = "git+https://github.com/allyourcodebase/mbedtls#68d5872dca0faa3e2a09d3329c73bd8779cc34e6",
