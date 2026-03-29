@@ -38,6 +38,7 @@ pub fn build(b: *std.Build) !void {
     const fuzz_testing = b.option(bool, "fuzz_testing", "Build with fuzzer for the server and client (automatically enables none chiper!)") orelse false;
     const picky_developer = b.option(bool, "picky_developer", "Build with picky developer flags") orelse false;
     const with_hermetic_usr = b.option(bool, "hermetic_usr", "Build with support for hermetic /usr/") orelse false;
+    const link_system_openssl = b.option(bool, "link_system_openssl", "If true, library will link against system openssl") orelse false;
 
     // Not implemented options
     if (with_gssapi or with_internal_doc or client_testing or server_testing or gssapi_testing or with_benchmarks or with_nacl or with_symbol_versioning or with_abi_break or fuzz_testing or picky_developer or with_hermetic_usr) {
@@ -244,14 +245,14 @@ pub fn build(b: *std.Build) !void {
     if (with_openssl) {
         // At this point in time, the openssl zig package
         // only supports linux.
-        if (target.result.os.tag == .linux) {
+        if (target.result.os.tag == .linux and !link_system_openssl) {
             const crypto = b.dependency("openssl", .{
                 .target = target,
                 .optimize = optimize,
             });
             libssh.linkLibrary(crypto.artifact("openssl"));
         } else {
-            libssh.linkSystemLibrary("crypto");
+            libssh.root_module.linkSystemLibrary("crypto", .{});
         }
     }
 
