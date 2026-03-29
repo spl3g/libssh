@@ -1,11 +1,11 @@
 const std = @import("std");
 
 const major = 0;
-const minor = 11;
-const patch = 2;
+const minor = 12;
+const patch = 0;
 const version = std.fmt.comptimePrint("{}.{}.{}", .{ major, minor, patch });
 
-pub fn build(b: *std.Build) void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -80,16 +80,20 @@ pub fn build(b: *std.Build) void {
         enable_exec = !is_windows;
     }
 
+    const config_paths = try makeConfigPaths(b.allocator, is_windows, with_hermetic_usr);
+
     const config = .{
         .PROJECT_NAME = "libssh",
         .PROJECT_VERSION = version,
         .SYSCONFDIR = "TODO",
         .BINARYDIR = "TODO",
         .SOURCEDIR = "TODO",
-        .USR_GLOBAL_BIND_CONFIG = "TODO",
-        .GLOBAL_BIND_CONFIG = "/etc/ssh/libssh_server_config",
-        .USR_GLOBAL_CLIENT_CONFIG = "TODO",
-        .GLOBAL_CLIENT_CONFIG = "/etc/ssh/ssh_config",
+        .USR_GLOBAL_CONF_DIR = config_paths.usr_conf_dir,
+        .GLOBAL_CONF_DIR = config_paths.conf_dir,
+        .USR_GLOBAL_BIND_CONFIG = config_paths.usr_bind_config,
+        .GLOBAL_BIND_CONFIG = config_paths.bind_config,
+        .USR_GLOBAL_CLIENT_CONFIG = config_paths.usr_client_config,
+        .GLOBAL_CLIENT_CONFIG = config_paths.client_config,
         .HAVE_ARGP_H = have_argp,
         .HAVE_ARPA_INET_H = is_unix,
         .HAVE_GLOB_H = is_unix,
@@ -568,4 +572,49 @@ pub fn build(b: *std.Build) void {
             examples.add("libsshpp_noexcept");
         }
     }
+}
+
+const ConfigPaths = struct {
+    conf_dir: []const u8,
+    bind_config: []u8,
+    client_config: []u8,
+    usr_conf_dir: ?[]u8 = null,
+    usr_bind_config: ?[]u8 = null,
+    usr_client_config: ?[]u8 = null,
+};
+
+fn makeConfigPaths(allocator: std.mem.Allocator, is_windows: bool, with_hermetic_usr: bool) !ConfigPaths {
+    const conf_dir = blk: {
+        if (is_windows) {
+            break :blk "C:/ProgramData/ssh";
+        } else {
+            break :blk "/etc/ssh";
+        }
+    };
+
+    var p: ConfigPaths = .{
+        .conf_dir = conf_dir,
+        .bind_config = try std.fmt.allocPrint(allocator, "{s}/libssh_server_config", .{conf_dir}),
+        .client_config = try std.fmt.allocPrint(allocator, "{s}/ssh_config", .{conf_dir}),
+    };
+
+    if (with_hermetic_usr) {
+        p.usr_conf_dir = try std.fmt.allocPrint(
+            allocator,
+            "/usr{s}",
+            .{conf_dir},
+        );
+        p.usr_bind_config = try std.fmt.allocPrint(
+            allocator,
+            "/usr{s}",
+            .{p.bind_config},
+        );
+        p.usr_client_config = try std.fmt.allocPrint(
+            allocator,
+            "/usr{s}",
+            .{p.client_config},
+        );
+    }
+
+    return p;
 }
